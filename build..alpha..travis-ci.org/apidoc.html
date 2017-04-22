@@ -1,0 +1,235 @@
+<div class="apidocDiv">
+<style>
+/*csslint
+*/
+.apidocDiv {
+    background: #fff;
+    font-family: Arial, Helvetica, sans-serif;
+}
+.apidocDiv a[href] {
+    color: #33f;
+    font-weight: bold;
+    text-decoration: none;
+}
+.apidocDiv a[href]:hover {
+    text-decoration: underline;
+}
+.apidocCodeCommentSpan {
+    background: #bbf;
+    color: #000;
+    display: block;
+}
+.apidocCodeKeywordSpan {
+    color: #d00;
+    font-weight: bold;
+}
+.apidocCodePre {
+    background: #eef;
+    border: 1px solid;
+    color: #777;
+    padding: 5px;
+    white-space: pre-wrap;
+}
+.apidocFooterDiv {
+    margin-top: 20px;
+    text-align: center;
+}
+.apidocModuleLi {
+    margin-top: 10px;
+}
+.apidocSectionDiv {
+    border-top: 1px solid;
+    margin-top: 20px;
+}
+.apidocSignatureSpan {
+    color: #777;
+    font-weight: bold;
+}
+</style>
+<h1>api documentation for
+    <a
+
+        href="https://github.com/emerleite/node-database-cleaner#readme"
+
+    >database-cleaner (v1.2.0)</a>
+</h1>
+<h4>Database Cleaner for node.js</h4>
+<div class="apidocSectionDiv"><a
+    href="#apidoc.tableOfContents"
+    id="apidoc.tableOfContents"
+><h1>table of contents</h1></a><ol>
+
+    <li class="apidocModuleLi"><a href="#apidoc.module.database-cleaner">module database-cleaner</a><ol>
+
+        <li>
+
+            <a class="apidocElementLiA" href="#apidoc.element.database-cleaner.database-cleaner">
+            function <span class="apidocSignatureSpan"></span>database-cleaner
+            <span class="apidocSignatureSpan">(type, config)</span>
+            </a>
+
+        </li>
+
+    </ol></li>
+
+</ol></div>
+
+<div class="apidocSectionDiv">
+<h1><a href="#apidoc.module.database-cleaner" id="apidoc.module.database-cleaner">module database-cleaner</a></h1>
+
+
+    <h2>
+        <a href="#apidoc.element.database-cleaner.database-cleaner" id="apidoc.element.database-cleaner.database-cleaner">
+        function <span class="apidocSignatureSpan"></span>database-cleaner
+        <span class="apidocSignatureSpan">(type, config)</span>
+        </a>
+    </h2>
+    <ul>
+    <li>description and source-code<pre class="apidocCodePre">database-cleaner = function (type, config) {
+  var cleaner = {};
+
+  if (!config) {
+    try {
+      config = require(&#x22;../../../config/cleaner-config.js&#x22;);
+    } catch(e) {
+      config = require(&#x22;../config/cleaner-config.js&#x22;);
+    }
+  }
+
+  cleaner[&#x27;mongodb&#x27;] = function(db, callback) {
+    db.collections( function (skip, collections) {
+      var count = collections.length;
+      if (count &#x3c; 1) return callback();
+
+      var skippedCollections = config.mongodb.skipCollections || [];
+
+      collections.forEach(function (collection) {
+        if(skippedCollections.indexOf(collection.collectionName) &#x3e; -1){
+          if (--count &#x3c;= 0 &#x26;&#x26; callback) {
+            callback();
+          } else {
+            return;
+          }
+        } else {
+          collection.drop(function () {
+            if (--count &#x3c;= 0 &#x26;&#x26; callback) {
+              callback();
+            }
+          });
+        }
+      });
+    });
+  };
+
+  cleaner[&#x27;redis&#x27;] = function(db, callback) {
+    db.flushdb(callback);
+  };
+
+  cleaner[&#x27;couchdb&#x27;] = function(db, callback) {
+    db.destroy(function (err, res) {
+      if (err) return callback(err);
+
+      db.create(callback);
+    });
+  };
+
+  cleaner[&#x27;mysql&#x27;] = function(db, callback) {
+    db.query(&#x27;show tables&#x27;, function(err, tables) {
+      if (err) return callback(err);
+
+      var database = db.config.connectionConfig ?
+        db.config.connectionConfig.database : db.config.database;
+
+      var count  = 0;
+      var length = tables.length;
+      var tableName = &#x27;Tables_in_&#x27; + database;
+      var skippedTables = config.mysql.skipTables;
+      var strategy = config.mysql.strategy || &#x27;deletion&#x27;;
+      if (strategy !== &#x27;deletion&#x27; &#x26;&#x26; strategy !== &#x27;truncation&#x27;) {
+        return callback(new Error(&#x27;Invalid deletion strategy: &#x27; + strategy));
+      }
+
+      if(length === 0) {
+        // The database is empty
+        return callback();
+      }
+
+      tables.forEach(function(table) {
+        if (skippedTables.indexOf(table[tableName]) === -1) {
+          var statement = strategy === &#x27;deletion&#x27; ? &#x27;DELETE FROM &#x27; : &#x27;TRUNCATE TABLE &#x27;
+          db.query(statement + table[tableName], function(err) {
+            if(err) {
+              return callback(err);
+            }
+
+            count++;
+            if (count &#x3e;= length) {
+              callback();
+            }
+          });
+        } else {
+          count++;
+          if (count &#x3e;= length) {
+            callback();
+          }
+        }
+      });
+    });
+  };
+
+  cleaner[&#x27;postgresql&#x27;] = function(db, callback) {
+    var schema = config.postgresql.schema || &#x27;public&#x27;;
+    var schemaPrefix = &#x27;&#x22;&#x27; + schema + &#x27;&#x22;.&#x27;;
+
+    db.query(&#x22;SELECT table_name FROM information_schema.tables WHERE table_schema = &#x27;&#x22; + schema + &#x22;&#x27; AND table_type = &#x27;BASE TABLE
+&#x27;;&#x22;, function(err, tables) {
+      if (err) return callback(err);
+
+      var count  = 0;
+      var length = tables.rows.length;
+      var skippedTables = config.postgresql.skipTables;
+      var strategy = config.postgresql.strategy || &#x27;deletion&#x27;;
+      if (strategy !== &#x27;deletion&#x27; &#x26;&#x26; strategy !== &#x27;truncation&#x27;) {
+        return callback(new Error(&#x27;Invalid deletion strategy: &#x27; + strategy));
+      }
+
+      if(length === 0) {
+        // The database is empty
+        return callback();
+      }
+
+      if (strategy === &#x27;deletion&#x27;) {
+        tables.rows.forEach(function(table) {
+          if (skippedTables.indexOf(table[&#x27;table_name&#x27;]) === -1) {
+            db.query(&#x22;DELETE FROM &#x22; + schemaPrefix + &#x22;\&#x22;&#x22; + table[&#x27;table_name&#x27;] + &#x22;\&#x22;&#x22;, function() {
+              count++;
+
+              if (count &#x3e;= length) {
+                callback();
+              }
+            });
+          } else {
+            count++;
+            if (count &#x3e;= length) {
+              callback();
+            }
+          }
+        });
+      } else if (strategy === &#x27;truncation&#x27;) {
+        var tableExpression = tables.rows
+                                .filter(function(table) {
+                                  return skippedTables.indexOf(table[&#x27;table_name&#x27;]) === -1;
+                                }).map(function(table) {
+                                  return schemaPrefix + &#x27;&#x22;&#x27; + table[&#x27;table_name&#x27;] + &#x27;&#x22;&#x27;; ...</pre></li>
+    <li>example usage<pre class="apidocCodePre">n/a</pre></li>
+    </ul>
+
+
+</div>
+
+<div class="apidocFooterDiv">
+    [ this document was created with
+    <a href="https://github.com/kaizhu256/node-utility2" target="_blank">utility2</a>
+    ]
+</div>
+</div>
